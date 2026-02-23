@@ -7,7 +7,7 @@ from database import SECCache
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(SKILL_DIR, "data", "askten.db")
 CIK_MAP_FILE = os.path.join(SKILL_DIR, "data", "cik_map.json")
-USER_AGENT = 'StockAnalysis/1.0 openclaw@local'
+USER_AGENT = 'nanobot/1.0 (peekay@example.com)'
 
 class SECClient:
     def __init__(self, cache_db=DEFAULT_DB):

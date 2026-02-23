@@ -3,6 +3,7 @@ import sqlite3
 import json
 import pandas as pd
 import io
+import time
 from datetime import datetime, timedelta
 
 def _ensure_db_dir(db_path):
@@ -28,30 +29,44 @@ class PriceCache:
             """)
 
     def get(self, ticker, days=1):
-        try:
-            with sqlite3.connect(self.db_path, timeout=15) as conn:
-                cursor = conn.execute("SELECT data, cached_at FROM price_cache WHERE ticker = ?", (ticker,))
-                row = cursor.fetchone()
-                if row:
-                    data, cached_at = row
-                    if datetime.fromisoformat(cached_at) > datetime.now() - timedelta(days=days):
-                        return pd.read_json(io.StringIO(data))
-        except sqlite3.OperationalError as e:
-            print(f"DEBUG: sqlite3.OperationalError in get for {ticker}: {e} (path: {self.db_path})")
-            raise
-        except (ValueError, TypeError, json.JSONDecodeError) as e:
-            # Corrupt cache or incompatible format — treat as miss
-            print(f"DEBUG: Price cache read failed for {ticker}: {e}")
+        for _ in range(3):
+            try:
+                with sqlite3.connect(self.db_path, timeout=15) as conn:
+                    cursor = conn.execute("SELECT data, cached_at FROM price_cache WHERE ticker = ?", (ticker,))
+                    row = cursor.fetchone()
+                    if row:
+                        data, cached_at = row
+                        if datetime.fromisoformat(cached_at) > datetime.now() - timedelta(days=days):
+                            return pd.read_json(io.StringIO(data))
+                break
+            except sqlite3.OperationalError as e:
+                if "unable to open database file" in str(e):
+                    time.sleep(0.5)
+                    continue
+                print(f"DEBUG: sqlite3.OperationalError in get for {ticker}: {e} (path: {self.db_path})")
+                raise
+            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                # Corrupt cache or incompatible format — treat as miss
+                print(f"DEBUG: Price cache read failed for {ticker}: {e}")
+                break
         return None
 
     def store(self, ticker, df):
         if df is None or df.empty:
             return
-        with sqlite3.connect(self.db_path, timeout=15) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO price_cache (ticker, data, cached_at)
-                VALUES (?, ?, ?)
-            """, (ticker, df.to_json(), datetime.now().isoformat()))
+        for _ in range(3):
+            try:
+                with sqlite3.connect(self.db_path, timeout=15) as conn:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO price_cache (ticker, data, cached_at)
+                        VALUES (?, ?, ?)
+                    """, (ticker, df.to_json(), datetime.now().isoformat()))
+                break
+            except sqlite3.OperationalError as e:
+                if "unable to open database file" in str(e):
+                    time.sleep(0.5)
+                    continue
+                raise
 
 class SECCache:
     def __init__(self, db_path):

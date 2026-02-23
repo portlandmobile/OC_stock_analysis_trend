@@ -29,7 +29,7 @@ class FormulaEngine:
 
     def cash_test(self):
         cash = self.facts.get('cash')
-        investments = self.facts.get('investments', 0)
+        investments = self.facts.get('investments') or 0
         debt = self.facts.get('debt')
         
         if cash is None or debt is None:

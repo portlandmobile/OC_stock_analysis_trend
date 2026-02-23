@@ -21,7 +21,7 @@ def main():
 
     pdm = PriceDataManager()
     # Fetching 500+ stocks can take time, batch_fetch handles it
-    price_data = pdm.batch_fetch_prices(tickers, force_refresh=args.force_refresh)
+    price_data = pdm.batch_fetch_prices(tickers, workers=10, force_refresh=args.force_refresh)
     
     signals = []
     for ticker, df in price_data.items():
