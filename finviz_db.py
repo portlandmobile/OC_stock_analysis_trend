@@ -32,9 +32,24 @@ class ScreenerCache:
                     screener_name TEXT NOT NULL,
                     ticker TEXT NOT NULL,
                     updated_at TIMESTAMP NOT NULL,
+                    Company TEXT,
+                    Sector TEXT,
+                    Industry TEXT,
+                    Country TEXT,
+                    PE TEXT,
+                    MarketCap TEXT,
                     PRIMARY KEY (screener_name, ticker)
                 )
             """)
+            self._add_columns_if_missing(conn)
+
+    def _add_columns_if_missing(self, conn):
+        """Add Company, Sector, Industry, Country, PE, MarketCap to existing tables."""
+        for col in ["Company", "Sector", "Industry", "Country", "PE", "MarketCap"]:
+            try:
+                conn.execute(f"ALTER TABLE screener_stocks ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def is_fresh(self, screener_name):
         """Return True if screener has data and updated_at is within TTL."""
@@ -99,11 +114,16 @@ class ScreenerCache:
             print(f"DEBUG: ScreenerCache get_tickers_for_date failed: {e}")
             return []
 
-    def store(self, screener_name, tickers):
-        """Replace all rows for this screener with (screener_name, ticker, updated_at)."""
-        if not tickers:
+    def store(self, screener_name, rows):
+        """
+        Replace all rows for this screener.
+        rows: list of dicts, each with 'ticker' and optionally Company, Sector, Industry, Country, PE, MarketCap.
+        """
+        if not rows:
             return
         updated_at = datetime.now().isoformat()
+        cols = ["screener_name", "ticker", "updated_at", "Company", "Sector", "Industry", "Country", "PE", "MarketCap"]
+        placeholders = ", ".join("?" * len(cols))
         for _ in range(3):
             try:
                 with sqlite3.connect(self.db_path, timeout=15) as conn:
@@ -111,10 +131,25 @@ class ScreenerCache:
                         "DELETE FROM screener_stocks WHERE screener_name = ?",
                         (screener_name,),
                     )
-                    conn.executemany(
-                        "INSERT INTO screener_stocks (screener_name, ticker, updated_at) VALUES (?, ?, ?)",
-                        [(screener_name, t, updated_at) for t in tickers],
-                    )
+                    for r in rows:
+                        ticker = r.get("ticker") or r.get("Ticker")
+                        if not ticker:
+                            continue
+                        vals = (
+                            screener_name,
+                            str(ticker).strip(),
+                            updated_at,
+                            r.get("Company"),
+                            r.get("Sector"),
+                            r.get("Industry"),
+                            r.get("Country"),
+                            r.get("PE"),
+                            r.get("MarketCap"),
+                        )
+                        conn.execute(
+                            f"INSERT INTO screener_stocks ({', '.join(cols)}) VALUES ({placeholders})",
+                            vals,
+                        )
                 break
             except sqlite3.OperationalError as e:
                 if "unable to open database file" in str(e):

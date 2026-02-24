@@ -5,13 +5,23 @@ Skips fetch if screener data is already fresh (1-day TTL).
 Usage:
   - With params: --screener "name" --url "https://finviz.com/screener.ashx?..."
   - Without params: reads finviz_config.json (array of {screener, url})
+  - URL value parameters only supports the following table types:
+    - 111 Overview
+    - 121 (Valuation)
+    - 131 (Ownership)
+    - 141 (Performance)
+    - 152 (Custom)
+    - 161 (Financial)
+    - 171 (Technical)
 """
 import argparse
 import json
 import os
 import sys
+import time
 from finviz_db import ScreenerCache
 from finviz.screener import Screener
+import finviz
 
 CONFIG_FILE = "finviz_config.json"
 
@@ -40,8 +50,39 @@ def _sync_one(cache, screener_name, url, force_refresh):
         print(f"No tickers returned from FinViz for '{screener_name}'.", file=sys.stderr)
         return 1
 
-    cache.store(screener_name, tickers)
-    print(f"Stored {len(tickers)} tickers for screener '{screener_name}'.")
+    # Enrich each ticker with get_stock(): Company, Sector, Industry, Country, P/E, Market Cap
+    rows = []
+    for t in tickers:
+        try:
+            info = finviz.get_stock(t)
+            if info is None:
+                info = {}
+            pe_val = info.get("P/E") or info.get("PE")
+            cap_val = info.get("Market Cap") or info.get("MarketCap")
+            rows.append({
+                "ticker": t,
+                "Company": info.get("Company"),
+                "Sector": info.get("Sector"),
+                "Industry": info.get("Industry"),
+                "Country": info.get("Country"),
+                "PE": str(pe_val) if pe_val is not None else None,
+                "MarketCap": str(cap_val) if cap_val is not None else None,
+            })
+        except Exception as e:
+            print(f"Warning: get_stock({t}) failed: {e}", file=sys.stderr)
+            rows.append({
+                "ticker": t,
+                "Company": None,
+                "Sector": None,
+                "Industry": None,
+                "Country": None,
+                "PE": None,
+                "MarketCap": None,
+            })
+        time.sleep(0.15)
+
+    cache.store(screener_name, rows)
+    print(f"Stored {len(rows)} tickers for screener '{screener_name}'.")
     return 0
 
 
