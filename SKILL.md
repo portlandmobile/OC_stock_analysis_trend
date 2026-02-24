@@ -430,6 +430,11 @@ python3 technical_only.py --threshold -90 --top-n 10 --format telegram
 cd {skillDir}
 python3 analyze.py --ticker AAPL --format telegram
 ```
+### update FinViz data
+```bash
+cd {skillDir}
+python3 finviz_sync.py
+```
 
 ### analyze FinViz screener
 When the user asks to analyze a FinViz screener (e.g. "analyze finviz screener refined 50D drop"), get the stock list from `finviz_screeners.db` and run Buffett analysis on each. Only process stocks whose screener updated date is today (or the date given by `--date-range`).
@@ -498,6 +503,9 @@ User: screen
 
 User: screen --min-score 8
 → python3 screening.py --min-score 8 --top-n 10 --format telegram
+
+User: finviz sync
+→ python3 finviz_sync.py
 ```
 
 Always append to every Telegram response:
