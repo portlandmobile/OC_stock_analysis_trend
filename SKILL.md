@@ -18,6 +18,7 @@ requires:
     - numpy
     - requests
     - TA-Lib
+    - finviz
 ---
 
 # Stock Analysis Skill
@@ -40,7 +41,7 @@ in the skill directory. If any are missing, generate them automatically.
 ls {skillDir}/*.py 2>/dev/null
 ```
 
-If the output shows all 9 scripts below, skip to the command sections.
+If the output shows all 11 scripts below, skip to the command sections.
 If any are missing, proceed to Step 2.
 
 ### Step 2: Create data directory
@@ -52,7 +53,7 @@ mkdir -p {skillDir}/data
 ### Step 3: Install dependencies
 
 ```bash
-pip3 install yfinance pandas numpy requests --break-system-packages
+pip3 install yfinance pandas numpy requests finviz --break-system-packages
 ```
 
 For TA-Lib — try pip first, fall back to numpy if it fails:
@@ -66,7 +67,7 @@ Generate each missing script by writing it to `{skillDir}/`. Use the detailed
 specifications in this SKILL.md as the source of truth for every script.
 After writing each file, verify it exists before moving to the next.
 
-The 9 required scripts and what each must do:
+The 11 required scripts and what each must do:
 
 ---
 
@@ -276,22 +277,26 @@ Scanned: 503 | Found: N oversold (X%)
 ---
 
 #### `analyze.py`
-Deep Buffett fundamental analysis for a single stock. Main entry point for
-the `analyze TICKER` command.
+Deep Buffett fundamental analysis for a single stock or for all stocks from a
+FinViz screener. Main entry point for `analyze TICKER` and for "analyze FinViz
+screener" (nanobot: use `--finviz-screener` to get stocks from finviz_screeners.db
+and run analysis on each).
 
 Must implement as a runnable script with argparse:
-- `--ticker STRING` required
+- `--ticker STRING` optional — single ticker (required if not using --finviz-screener)
+- `--finviz-screener STRING` optional — `"all"` or a specific screener name (e.g. "refined 50D drop")
+- `--date-range STRING` optional — date for screener filter (YYYY-MM-DD). Default: today.
 - `--format STRING` default "telegram"
 - `--force-refresh` flag
 
 Logic:
-1. Create `SECClient()`
-2. Call `client.resolve_ticker(ticker)` to get CIK
-3. Call `client.get_companyfacts(cik)` to get SEC data
-4. Extract all needed facts using `client.extract_fact()` with tag aliases
-5. Create `FormulaEngine(facts)` and call `evaluate_all()`
-6. Count PASS / FAIL (exclude NA from denominator)
-7. Format and print output
+- **Single-ticker mode** (when `--ticker` is set): same as before — resolve CIK, get companyfacts, extract facts, FormulaEngine, print.
+- **FinViz screener mode** (when `--finviz-screener` is set):
+  1. Resolve `on_date` = `--date-range` if provided, else today (YYYY-MM-DD).
+  2. From `finviz_db.ScreenerCache`, call `get_tickers_for_date(screener_name, on_date)` to get tickers from `finviz_screeners.db` where `date(updated_at) = on_date`. Use screener name as given, or `"all"` for distinct tickers from any screener.
+  3. Only stocks with updated date equal to `on_date` are processed; older dates are ignored unless `--date-range` is set.
+  4. For each ticker, run the same Buffett analysis (resolve CIK, companyfacts, FormulaEngine, print).
+- Either `--ticker` or `--finviz-screener` must be provided.
 
 Output format (telegram):
 ```
@@ -354,6 +359,57 @@ Top {N} Opportunities:
 
 ---
 
+#### `finviz_db.py`
+SQLite layer for FinViz screener results. Used by finviz_sync.py; other scripts
+can call `get_tickers(screener_name)` to get the ticker list for a screener.
+
+Must implement:
+- `ScreenerCache(db_path="{skillDir}/data/finviz_screeners.db")` class:
+  - Table `screener_stocks`: columns `screener_name`, `ticker`, `updated_at`;
+    PRIMARY KEY (screener_name, ticker)
+  - `is_fresh(screener_name)` → True if screener has data and updated_at is within TTL
+  - `get_tickers(screener_name)` → list of ticker strings, or None if missing/stale
+- `get_tickers_for_date(screener_name, on_date)` → list of tickers where `date(updated_at) = on_date` (on_date str "YYYY-MM-DD"); screener_name `"all"` returns distinct tickers from any screener for that date
+  - `store(screener_name, tickers)` → replace all rows for that screener with
+    (screener_name, ticker, updated_at) for each ticker
+- TTL: 1 day — data older than 24 hours is treated as stale
+- Create table on __init__ if it doesn't exist
+
+---
+
+#### `finviz_sync.py`
+Fetch stocks from a FinViz screener URL and store them in SQLite (1-day TTL).
+Skips fetch if screener data is already fresh unless `--force-refresh` is used.
+
+Must implement as a runnable script with argparse:
+- `--screener STRING` optional — screener label (e.g. "refined 50D drop")
+- `--url STRING` optional — FinViz screener URL (e.g. from finviz.com)
+- `--force-refresh` flag
+
+Logic:
+1. If both `--screener` and `--url` are passed: sync that one screener
+2. If neither is passed: read `finviz_config.json` from skill directory;
+   each node must have `screener` and `url`; sync each screener in order
+3. If no parameters and no valid config: print message asking user to pass
+   parameters or create finviz_config.json, then exit with error
+4. For each screener: if not fresh (or force-refresh), call
+   `Screener.init_from_url(url)` (finviz library), extract tickers from
+   `row["Ticker"]`, store via ScreenerCache
+
+Config format (`finviz_config.json`):
+```json
+[
+  {"screener": "refined 50D drop", "url": "https://finviz.com/screener.ashx?v=111&f=..."},
+  {"screener": "another", "url": "https://finviz.com/screener.ashx?..."}
+]
+```
+
+Requires the `finviz` Python package (`pip install finviz`). FinViz table `v`
+must be a type the library supports (e.g. 111 Overview); if the URL uses
+an unsupported view (e.g. 110), use v=111 in the URL.
+
+---
+
 ## Running Commands
 
 Once all scripts exist, execute commands as follows.
@@ -374,6 +430,23 @@ python3 technical_only.py --threshold -90 --top-n 10 --format telegram
 cd {skillDir}
 python3 analyze.py --ticker AAPL --format telegram
 ```
+
+### analyze FinViz screener
+When the user asks to analyze a FinViz screener (e.g. "analyze finviz screener refined 50D drop"), get the stock list from `finviz_screeners.db` and run Buffett analysis on each. Only process stocks whose screener updated date is today (or the date given by `--date-range`).
+
+```bash
+cd {skillDir}
+# Specific screener (stocks updated today)
+python3 analyze.py --finviz-screener "refined 50D drop" --format telegram
+
+# All screeners (distinct tickers updated today)
+python3 analyze.py --finviz-screener all --format telegram
+
+# Use a specific date (e.g. yesterday)
+python3 analyze.py --finviz-screener "refined 50D drop" --date-range 2025-02-22 --format telegram
+```
+
+Ensure `finviz_sync.py` has been run for the desired screener(s) so that `finviz_screeners.db` has rows with the desired `updated_at` date.
 
 ### screen
 ```bash
@@ -413,6 +486,12 @@ User: analyze V
 
 User: analyze AAPL
 → python3 analyze.py --ticker AAPL --format telegram
+
+User: analyze finviz screener refined 50D drop
+→ python3 analyze.py --finviz-screener "refined 50D drop" --format telegram
+
+User: analyze finviz screener all
+→ python3 analyze.py --finviz-screener all --format telegram
 
 User: screen
 → python3 screening.py --min-score 5 --top-n 10 --format telegram

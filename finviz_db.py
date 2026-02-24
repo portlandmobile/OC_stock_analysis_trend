@@ -76,6 +76,29 @@ class ScreenerCache:
             print(f"DEBUG: ScreenerCache get_tickers failed for {screener_name}: {e}")
             return None
 
+    def get_tickers_for_date(self, screener_name, on_date):
+        """
+        Return list of tickers where updated_at date equals on_date.
+        on_date: str "YYYY-MM-DD".
+        screener_name: specific name, or "all" for distinct tickers from any screener.
+        """
+        try:
+            with sqlite3.connect(self.db_path, timeout=15) as conn:
+                if screener_name.strip().lower() == "all":
+                    cursor = conn.execute(
+                        "SELECT DISTINCT ticker FROM screener_stocks WHERE date(updated_at) = ?",
+                        (on_date,),
+                    )
+                else:
+                    cursor = conn.execute(
+                        "SELECT ticker FROM screener_stocks WHERE screener_name = ? AND date(updated_at) = ?",
+                        (screener_name, on_date),
+                    )
+                return [r[0] for r in cursor.fetchall()]
+        except (sqlite3.OperationalError, ValueError, TypeError) as e:
+            print(f"DEBUG: ScreenerCache get_tickers_for_date failed: {e}")
+            return []
+
     def store(self, screener_name, tickers):
         """Replace all rows for this screener with (screener_name, ticker, updated_at)."""
         if not tickers:

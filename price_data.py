@@ -13,6 +13,10 @@ class PriceDataManager:
         print(f"DEBUG: db_path={db_path}")
         self.cache = PriceCache(db_path)
 
+    def get_metadata(self, ticker, days=1):
+        """Return dict with pe_ratio, sector, industry or None if missing/expired."""
+        return self.cache.get_metadata(ticker, days=days)
+
     def get_daily_prices(self, ticker, days=90, force_refresh=False):
         if not force_refresh:
             cached_df = self.cache.get(ticker)
@@ -20,12 +24,18 @@ class PriceDataManager:
                 return cached_df
 
         try:
-            # yfinance can be noisy, but we'll let it be for now
-            df = yf.Ticker(ticker).history(period=f"{days}d")
+            t = yf.Ticker(ticker)
+            df = t.history(period=f"{days}d")
             if df.empty:
                 return None
-            
-            self.cache.store(ticker, df)
+            info = t.info or {}
+            pe = info.get("trailingPE") or info.get("forwardPE")
+            metadata = {
+                "pe_ratio": float(pe) if pe is not None else None,
+                "sector": info.get("sector"),
+                "industry": info.get("industry"),
+            }
+            self.cache.store(ticker, df, metadata=metadata)
             return df
         except Exception as e:
             print(f"Warning: Failed to fetch prices for {ticker}: {e}")
