@@ -1,0 +1,4 @@
+[
+    {"screener": "refined 50D drop", "url": "https://finviz.com/screener.ashx?v=111&f=fa_epsyoy_pos,fa_estltgrowth_pos,fa_pe_u10,sh_curvol_o100,ta_highlow50d_b30h&ft=4&o=pe"},
+    {"screener": "dividend and new low", "url": "https://finviz.com/screener.ashx?v=111&f=fa_div_o5,fa_salesqoq_o5,ta_highlow52w_a0to5h&o=-marketcap"}
+]
