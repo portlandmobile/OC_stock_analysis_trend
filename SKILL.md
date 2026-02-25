@@ -280,7 +280,7 @@ Scanned: 503 | Found: N oversold (X%)
 Deep Buffett fundamental analysis for a single stock or for all stocks from a
 FinViz screener. Main entry point for `analyze TICKER` and for "analyze FinViz
 screener" (nanobot: use `--finviz-screener` to get stocks from finviz_screeners.db
-and run analysis on each).
+and run analysis on each; output includes metadata per stock when available).
 
 Must implement as a runnable script with argparse:
 - `--ticker STRING` optional — single ticker (required if not using --finviz-screener)
@@ -290,17 +290,25 @@ Must implement as a runnable script with argparse:
 - `--force-refresh` flag
 
 Logic:
-- **Single-ticker mode** (when `--ticker` is set): same as before — resolve CIK, get companyfacts, extract facts, FormulaEngine, print.
+- **Single-ticker mode** (when `--ticker` is set): resolve CIK, get companyfacts, extract facts, FormulaEngine, print. No metadata line.
 - **FinViz screener mode** (when `--finviz-screener` is set):
   1. Resolve `on_date` = `--date-range` if provided, else today (YYYY-MM-DD).
-  2. From `finviz_db.ScreenerCache`, call `get_tickers_for_date(screener_name, on_date)` to get tickers from `finviz_screeners.db` where `date(updated_at) = on_date`. Use screener name as given, or `"all"` for distinct tickers from any screener.
+  2. From `finviz_db.ScreenerCache`, call `get_tickers_with_metadata(screener_name, on_date)` to get rows from `finviz_screeners.db` where `date(updated_at) = on_date`. Each row includes ticker plus Company, Sector, Industry, Country, PE, MarketCap (from finviz_sync). Use screener name as given, or `"all"` for distinct tickers from any screener (one row per ticker).
   3. Only stocks with updated date equal to `on_date` are processed; older dates are ignored unless `--date-range` is set.
-  4. For each ticker, run the same Buffett analysis (resolve CIK, companyfacts, FormulaEngine, print).
+  4. Loop through each row: for each ticker, run the same Buffett analysis (resolve CIK, companyfacts, FormulaEngine). When printing in telegram format, **pull and display metadata** from the row: right after the `📊 {TICKER} — Buffett Analysis` line, print one line: `Company | Industry | P/E: {PE} | Market Cap: {MarketCap}`. Use **N/A** for any missing value (Company, Industry, PE, or MarketCap).
 - Either `--ticker` or `--finviz-screener` must be provided.
 
-Output format (telegram):
+Output format (telegram), single-ticker:
 ```
 📊 {TICKER} — Buffett Analysis
+Score: X/10 Buffett Criteria
+...
+```
+
+Output format (telegram), FinViz screener mode (per stock):
+```
+📊 {TICKER} — Buffett Analysis
+{Company} | {Industry} | P/E: {PE} | Market Cap: {MarketCap}
 Score: X/10 Buffett Criteria
 
 ✅ Strengths
@@ -314,6 +322,7 @@ Score: X/10 Buffett Criteria
 📎 Data: SEC EDGAR 10-K ({period_end})
 ⚠️ Not financial advice.
 ```
+Missing Company, Industry, PE, or MarketCap are shown as **N/A**.
 
 ---
 
@@ -360,31 +369,33 @@ Top {N} Opportunities:
 ---
 
 #### `finviz_db.py`
-SQLite layer for FinViz screener results. Used by finviz_sync.py; other scripts
-can call `get_tickers(screener_name)` to get the ticker list for a screener.
+SQLite layer for FinViz screener results. Used by finviz_sync.py (writes) and
+analyze.py (reads tickers + metadata for screener mode).
 
 Must implement:
 - `ScreenerCache(db_path="{skillDir}/data/finviz_screeners.db")` class:
-  - Table `screener_stocks`: columns `screener_name`, `ticker`, `updated_at`;
-    PRIMARY KEY (screener_name, ticker)
+  - Table `screener_stocks`: columns `screener_name`, `ticker`, `updated_at`, `Company`, `Sector`, `Industry`, `Country`, `PE`, `MarketCap` (no spaces in column names; P/E → PE, Market Cap → MarketCap). PRIMARY KEY (screener_name, ticker).
   - `is_fresh(screener_name)` → True if screener has data and updated_at is within TTL
   - `get_tickers(screener_name)` → list of ticker strings, or None if missing/stale
-- `get_tickers_for_date(screener_name, on_date)` → list of tickers where `date(updated_at) = on_date` (on_date str "YYYY-MM-DD"); screener_name `"all"` returns distinct tickers from any screener for that date
-  - `store(screener_name, tickers)` → replace all rows for that screener with
-    (screener_name, ticker, updated_at) for each ticker
+  - `get_tickers_for_date(screener_name, on_date)` → list of tickers where `date(updated_at) = on_date` (on_date str "YYYY-MM-DD"); screener_name `"all"` returns distinct tickers from any screener for that date
+  - `get_tickers_with_metadata(screener_name, on_date)` → list of dicts, each with keys `ticker`, `Company`, `Sector`, `Industry`, `Country`, `PE`, `MarketCap` for rows where `date(updated_at) = on_date`; for `"all"`, dedupe by ticker (one row per ticker). Used by analyze.py in FinViz screener mode to display metadata per stock.
+  - `store(screener_name, rows)` → replace all rows for that screener; each row is a dict with `ticker` and optionally Company, Sector, Industry, Country, PE, MarketCap
 - TTL: 1 day — data older than 24 hours is treated as stale
-- Create table on __init__ if it doesn't exist
+- Create table on __init__ if it doesn't exist; add new metadata columns via ALTER if table already exists
 
 ---
 
 #### `finviz_sync.py`
 Fetch stocks from a FinViz screener URL and store them in SQLite (1-day TTL).
-Skips fetch if screener data is already fresh unless `--force-refresh` is used.
+Enriches each ticker with `finviz.get_stock(ticker)` to store Company, Sector,
+Industry, Country, P/E (as PE), Market Cap (as MarketCap). Skips fetch if
+screener data is already fresh unless `--force-refresh` is used.
 
 Must implement as a runnable script with argparse:
 - `--screener STRING` optional — screener label (e.g. "refined 50D drop")
 - `--url STRING` optional — FinViz screener URL (e.g. from finviz.com)
 - `--force-refresh` flag
+- `--clean STRING` optional — `"true"` (default) or `"false"`. When true, exclude from storage: Industry = "Asset Management", Industry contains "Closed-End Fund", Industry = "REIT - Office", Country = "China". Use `--clean false` to disable filtering.
 
 Logic:
 1. If both `--screener` and `--url` are passed: sync that one screener
@@ -394,7 +405,10 @@ Logic:
    parameters or create finviz_config.json, then exit with error
 4. For each screener: if not fresh (or force-refresh), call
    `Screener.init_from_url(url)` (finviz library), extract tickers from
-   `row["Ticker"]`, store via ScreenerCache
+   `row["Ticker"]`, then for each ticker call `finviz.get_stock(ticker)` to get
+   Company, Sector, Industry, Country, P/E, Market Cap; build rows and pass to
+   ScreenerCache.store(screener_name, rows). If `--clean` is true, filter out
+   rows matching the excluded Industry/Country rules before storing.
 
 Config format (`finviz_config.json`):
 ```json
@@ -437,7 +451,7 @@ python3 finviz_sync.py
 ```
 
 ### analyze FinViz screener
-When the user asks to analyze a FinViz screener (e.g. "analyze finviz screener refined 50D drop"), get the stock list from `finviz_screeners.db` and run Buffett analysis on each. Only process stocks whose screener updated date is today (or the date given by `--date-range`).
+When the user asks to analyze a FinViz screener (e.g. "analyze finviz screener refined 50D drop"), get the stock list **with metadata** from `finviz_screeners.db` and run Buffett analysis on each. Only process stocks whose screener updated date is today (or the date given by `--date-range`). For each stock, analyze uses `get_tickers_with_metadata` so it can display **Company, Industry, P/E, Market Cap** from the DB right after the ticker line (shows **N/A** for any missing value).
 
 ```bash
 cd {skillDir}
@@ -451,7 +465,7 @@ python3 analyze.py --finviz-screener all --format telegram
 python3 analyze.py --finviz-screener "refined 50D drop" --date-range 2025-02-22 --format telegram
 ```
 
-Ensure `finviz_sync.py` has been run for the desired screener(s) so that `finviz_screeners.db` has rows with the desired `updated_at` date.
+Ensure `finviz_sync.py` has been run for the desired screener(s) so that `finviz_screeners.db` has rows (with metadata) and the desired `updated_at` date.
 
 ### screen
 ```bash
@@ -477,7 +491,7 @@ python3 screening.py --min-score 8 --top-n 10 --format telegram
 
 ---
 
-## Example Telegram Interactions
+## Example Telegram Interactions & Cron Jobs
 
 ```
 User: oversold
@@ -494,9 +508,11 @@ User: analyze AAPL
 
 User: analyze finviz screener refined 50D drop
 → python3 analyze.py --finviz-screener "refined 50D drop" --format telegram
+(Output includes Company, Industry, P/E, Market Cap per stock from finviz_screeners.db; N/A if missing.)
 
 User: analyze finviz screener all
 → python3 analyze.py --finviz-screener all --format telegram
+(Output includes metadata per stock as above.)
 
 User: screen
 → python3 screening.py --min-score 5 --top-n 10 --format telegram

@@ -21,8 +21,15 @@ TAGS_MAP = {
 }
 
 
-def run_analysis(client, ticker, args):
-    """Run Buffett analysis for one ticker. Returns True on success, False on skip/error."""
+def _fmt_meta(val):
+    """Format metadata value for display; use N/A if missing."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return "N/A"
+    return str(val).strip()
+
+
+def run_analysis(client, ticker, args, metadata=None):
+    """Run Buffett analysis for one ticker. metadata optional dict with Company, Industry, PE, MarketCap for display."""
     ticker = ticker.strip().upper()
     if not ticker:
         return False
@@ -59,6 +66,11 @@ def run_analysis(client, ticker, args):
 
     if args.format == "telegram":
         print(f"📊 {ticker} — Buffett Analysis")
+        if metadata:
+            print(
+                f"{_fmt_meta(metadata.get('Company'))} | {_fmt_meta(metadata.get('Industry'))} | "
+                f"P/E: {_fmt_meta(metadata.get('PE'))} | Market Cap: {_fmt_meta(metadata.get('MarketCap'))}"
+            )
         print(f"Score: {pass_count}/{total_valid} Buffett Criteria\n")
 
         strengths = [r for r in results if r['status'] == "PASS"]
@@ -107,15 +119,15 @@ def main():
             print("Error: finviz_db not available. Cannot use --finviz-screener.")
             return 1
         cache = ScreenerCache()
-        tickers = cache.get_tickers_for_date(args.finviz_screener.strip(), on_date)
-        if not tickers:
+        rows = cache.get_tickers_with_metadata(args.finviz_screener.strip(), on_date)
+        if not rows:
             print(f"No stocks found for screener '{args.finviz_screener}' with updated date {on_date}. Run finviz_sync first or use --date-range.")
             return 1
         client = SECClient()
         if args.format == "telegram":
-            print(f"📋 Buffett Analysis — FinViz screener: {args.finviz_screener} (updated {on_date}, {len(tickers)} stocks)\n")
-        for t in tickers:
-            run_analysis(client, t, args)
+            print(f"📋 Buffett Analysis — FinViz screener: {args.finviz_screener} (updated {on_date}, {len(rows)} stocks)\n")
+        for row in rows:
+            run_analysis(client, row["ticker"], args, metadata=row)
         return 0
 
     # Single-ticker mode

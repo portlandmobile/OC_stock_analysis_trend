@@ -114,6 +114,59 @@ class ScreenerCache:
             print(f"DEBUG: ScreenerCache get_tickers_for_date failed: {e}")
             return []
 
+    def get_tickers_with_metadata(self, screener_name, on_date):
+        """
+        Return list of dicts with ticker, Company, Sector, Industry, Country, PE, MarketCap
+        for rows where date(updated_at) = on_date. screener_name or "all" (dedupe by ticker).
+        """
+        try:
+            with sqlite3.connect(self.db_path, timeout=15) as conn:
+                if screener_name.strip().lower() == "all":
+                    cursor = conn.execute(
+                        "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap "
+                        "FROM screener_stocks WHERE date(updated_at) = ? ORDER BY screener_name, ticker",
+                        (on_date,),
+                    )
+                    rows = cursor.fetchall()
+                    # Dedupe by ticker, keep first
+                    seen = set()
+                    result = []
+                    for r in rows:
+                        t = r[0]
+                        if t in seen:
+                            continue
+                        seen.add(t)
+                        result.append({
+                            "ticker": t,
+                            "Company": r[1],
+                            "Sector": r[2],
+                            "Industry": r[3],
+                            "Country": r[4],
+                            "PE": r[5],
+                            "MarketCap": r[6],
+                        })
+                    return result
+                cursor = conn.execute(
+                    "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap "
+                    "FROM screener_stocks WHERE screener_name = ? AND date(updated_at) = ?",
+                    (screener_name, on_date),
+                )
+                return [
+                    {
+                        "ticker": r[0],
+                        "Company": r[1],
+                        "Sector": r[2],
+                        "Industry": r[3],
+                        "Country": r[4],
+                        "PE": r[5],
+                        "MarketCap": r[6],
+                    }
+                    for r in cursor.fetchall()
+                ]
+        except (sqlite3.OperationalError, ValueError, TypeError) as e:
+            print(f"DEBUG: ScreenerCache get_tickers_with_metadata failed: {e}")
+            return []
+
     def store(self, screener_name, rows):
         """
         Replace all rows for this screener.

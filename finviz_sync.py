@@ -26,7 +26,28 @@ import finviz
 CONFIG_FILE = "finviz_config.json"
 
 
-def _sync_one(cache, screener_name, url, force_refresh):
+def _should_skip_row(row, clean):
+    """If clean is True, return True for rows to exclude (Asset Management, Funds, REITs, China)."""
+    if not clean:
+        return False
+    industry = (row.get("Industry") or "").strip()
+    country = (row.get("Country") or "").strip()
+    # Exclude Asset Management
+    if "Asset Management" in industry:
+        return True
+    # Exclude Funds (Closed-End Fund, etc.)
+    if "Fund" in industry:
+        return True
+    # Exclude ALL REITs
+    if "REIT" in industry:
+        return True
+    # Exclude China as per default skill behavior
+    if country == "China":
+        return True
+    return False
+
+
+def _sync_one(cache, screener_name, url, force_refresh, clean=True):
     """Sync one screener. Returns 0 on success, 1 on error."""
     if not force_refresh and cache.is_fresh(screener_name):
         tickers = cache.get_tickers(screener_name)
@@ -81,6 +102,13 @@ def _sync_one(cache, screener_name, url, force_refresh):
             })
         time.sleep(0.15)
 
+    if clean:
+        before = len(rows)
+        rows = [r for r in rows if not _should_skip_row(r, clean)]
+        skipped = before - len(rows)
+        if skipped:
+            print(f"Clean filter excluded {skipped} stocks (Asset Management, Closed-End Fund, REIT - Office, China).")
+
     cache.store(screener_name, rows)
     print(f"Stored {len(rows)} tickers for screener '{screener_name}'.")
     return 0
@@ -115,7 +143,15 @@ def main():
     parser.add_argument("--screener", type=str, help="Screener label (e.g. 'refined 50D drop')")
     parser.add_argument("--url", type=str, help="FinViz screener URL (e.g. from finviz.com)")
     parser.add_argument("--force-refresh", action="store_true", help="Fetch from FinViz even if cache is fresh")
+    parser.add_argument(
+        "--clean",
+        type=str,
+        default="true",
+        choices=("true", "false"),
+        help="Exclude Asset Management, Closed-End Fund, REIT - Office, China (default: true). Use --clean false to disable.",
+    )
     args = parser.parse_args()
+    clean = args.clean.lower() == "true"
 
     screeners = []
     if args.screener and args.url:
@@ -135,7 +171,7 @@ def main():
     cache = ScreenerCache()
     failed = 0
     for screener_name, url in screeners:
-        if _sync_one(cache, screener_name, url, args.force_refresh) != 0:
+        if _sync_one(cache, screener_name, url, args.force_refresh, clean=clean) != 0:
             failed += 1
     return 1 if failed else 0
 
