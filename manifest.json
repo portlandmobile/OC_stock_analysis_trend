@@ -1,0 +1,15 @@
+{
+  "name": "stock-analysis",
+  "version": "1.0.0",
+  "runtime": "node20", 
+  "tools": [
+    {
+      "name": "analyze",
+      "description": "analyzing a stock or finviz screener.  Details are included in SKILLS.md",
+      "parameters": {
+        "type": "object",
+        "properties": { "query": { "type": "string" } }
+      }
+    }
+  ]
+}

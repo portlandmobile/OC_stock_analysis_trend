@@ -61,7 +61,7 @@ def get_buffett_score(client, ticker):
     return f"{pass_count}/{total_valid}"
 
 def main():
-    screener_name = "dividend_new_low"
+    screener_name = "dividend and new low"
     on_date = date.today().isoformat()
     
     cache = ScreenerCache()
@@ -80,19 +80,19 @@ def main():
     # Convert to DataFrame for easier sorting
     df = pd.DataFrame(rows)
     
-    # Clean PE: remove commas, convert to float
+    # Clean PE: remove commas, convert to float. Default to 10.0 if missing/invalid.
     def clean_pe(val):
-        if val is None or val == "-" or val == "N/A":
-            return -1.0
+        if val is None or val == "-" or val == "N/A" or val == "" or val == "None" or val == " ":
+            return 10.0
         try:
             return float(str(val).replace(",", ""))
         except:
-            return -1.0
+            return 10.0
 
     df['PE_float'] = df['PE'].apply(clean_pe)
     
-    # Filter for positive PE and sort
-    df_filtered = df[df['PE_float'] > 0].sort_values('PE_float').head(20)
+    # Filter for positive PE and sort (limit to 20)
+    df_filtered = df.sort_values('PE_float').head(20)
     
     if df_filtered.empty:
         print("No stocks with positive P/E found.")

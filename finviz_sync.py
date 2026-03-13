@@ -36,7 +36,7 @@ def _should_skip_row(row, clean):
     if "Asset Management" in industry:
         return True
     # Exclude Funds (Closed-End Fund, etc.)
-    if "Fund" in industry:
+    if "Fund" in indust
         return True
     # Exclude ALL REITs
     if "REIT" in industry:
@@ -148,7 +148,7 @@ def main():
         type=str,
         default="true",
         choices=("true", "false"),
-        help="Exclude Asset Management, Closed-End Fund, REIT - Office, China (default: true). Use --clean false to disable.",
+        help="Exclude Asset Management, Closed-End Fund, REIT - Office, China (default: true). Use --clean true to enable.",
     )
     args = parser.parse_args()
     clean = args.clean.lower() == "true"

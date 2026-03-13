@@ -8,17 +8,23 @@ import os
 import sys
 
 # Change to the skill directory so imports and paths work
-os.chdir("/Users/peekay/.nanobot/workspace/skills/OC_stock_analysis_trend")
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SKILL_DIR)
+sys.path.append(SKILL_DIR)
 
 # Configuration
 DB_PATH = "data/finviz_screeners.db"
 SCREENER_NAME = "dividend and new low"
 EXCLUDED_INDUSTRIES = ["Asset Management", "REIT", "Financial Fund", "Closed-End Fund"]
 
-def get_stocks():
+def get_stocks(screener_name):
     conn = sqlite3.connect(DB_PATH)
-    query = f"SELECT ticker, Company, Industry, PE FROM screener_stocks WHERE screener_name = ?"
-    df = pd.read_sql_query(query, conn, params=(SCREENER_NAME,))
+    if screener_name == "all":
+        query = f"SELECT ticker, Company, Industry, PE FROM screener_stocks"
+        df = pd.read_sql_query(query, conn)
+    else:
+        query = f"SELECT ticker, Company, Industry, PE FROM screener_stocks WHERE screener_name = ?"
+        df = pd.read_sql_query(query, conn, params=(screener_name,))
     conn.close()
     return df
 
@@ -51,7 +57,7 @@ import pandas as pd
 import numpy as np
 import json
 import sys
-sys.path.append("/Users/peekay/.nanobot/workspace/skills/OC_stock_analysis_trend")
+sys.path.append("{SKILL_DIR}")
 from technical_indicators import calculate_williams_r, classify_intensity
 
 ticker = "{ticker}"
@@ -68,9 +74,23 @@ else:
     except Exception as e:
         return {"wr": "N/A", "status": "N/A"}
 
+import argparse
+
 def main():
-    df = get_stocks()
-    df = filter_stocks(df)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ticker", type=str)
+    parser.add_argument("--screener", type=str, default="dividend and new low")
+    args = parser.parse_args()
+
+    if args.ticker:
+        # Handle single ticker logic
+        ticker = args.ticker
+        # (Assuming for a single ticker we might just want a one-row table or reuse existing logic)
+        # For now, let's just make it work for the single ticker
+        df = pd.DataFrame([{"ticker": ticker, "Company": ticker, "Industry": "Manual", "PE": "N/A"}])
+    else:
+        df = get_stocks(args.screener)
+        df = filter_stocks(df)
     
     results = []
     for _, row in df.iterrows():
