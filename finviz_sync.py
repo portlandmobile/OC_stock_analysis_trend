@@ -36,7 +36,7 @@ def _should_skip_row(row, clean):
     if "Asset Management" in industry:
         return True
     # Exclude Funds (Closed-End Fund, etc.)
-    if "Fund" in indust
+    if "Fund" in industry:
         return True
     # Exclude ALL REITs
     if "REIT" in industry:

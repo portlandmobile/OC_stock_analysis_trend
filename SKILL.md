@@ -426,7 +426,7 @@ an unsupported view (e.g. 110), use v=111 in the URL.
 
 ## Running Commands
 
-Once all scripts exist, execute commands as follows.
+Once all scripts exist, execute commands as follows. For stock-analysis, please make sure to remember that output from any intermediary script execution do not need to send to providers.  Just pass on to the next script.
 
 ### oversold
 ```bash
@@ -507,6 +507,7 @@ User: analyze AAPL
 → python3 analyze.py --ticker AAPL --format telegram
 
 User: analyze finviz screener refined 50D drop
+Always run finviz_sync.py first and then the analyze script like below. Then call final_report.py to display the output.
 → python3 analyze.py --finviz-screener "refined 50D drop" --format telegram
 (Output includes Company, Industry, P/E, Market Cap per stock from finviz_screeners.db; N/A if missing.)
 

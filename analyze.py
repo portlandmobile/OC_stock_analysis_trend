@@ -44,11 +44,15 @@ def run_analysis(client, ticker, args, metadata=None):
 
     extracted = {}
     provenance = None
+    provenance_periods = []
     for key, tags in TAGS_MAP.items():
         val, prov = client.extract_fact(facts_data, tags)
         extracted[key] = val
         if prov:
             provenance = prov
+            period_end = prov.get("period_end")
+            if period_end:
+                provenance_periods.append(period_end)
 
     std_val, _ = client.extract_fact(facts_data, ['ShortTermBorrowings'])
     if std_val and extracted.get('debt'):
@@ -96,7 +100,16 @@ def run_analysis(client, ticker, args, metadata=None):
             print(f"ℹ️ Missing Data: {', '.join([r['name'] for r in missing])}\n")
 
         if provenance:
-            print(f"📎 Data: SEC EDGAR 10-K ({provenance['period_end']})")
+            if provenance_periods:
+                min_period = min(provenance_periods)
+                max_period = max(provenance_periods)
+                if min_period == max_period:
+                    period_text = min_period
+                else:
+                    period_text = f"{min_period} -> {max_period}"
+            else:
+                period_text = provenance.get("period_end", "N/A")
+            print(f"📎 Data: SEC EDGAR 10-K ({period_text})")
         print("⚠️ Not financial advice.")
     return True
 
