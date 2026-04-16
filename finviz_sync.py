@@ -109,6 +109,16 @@ def _sync_one(cache, screener_name, url, force_refresh, clean=True):
         if skipped:
             print(f"Clean filter excluded {skipped} stocks (Asset Management, Closed-End Fund, REIT - Office, China).")
 
+    # Deduplicate rows by ticker
+    seen_tickers = set()
+    deduped_rows = []
+    for r in rows:
+        t = r.get("ticker")
+        if t not in seen_tickers:
+            deduped_rows.append(r)
+            seen_tickers.add(t)
+    rows = deduped_rows
+
     cache.store(screener_name, rows)
     print(f"Stored {len(rows)} tickers for screener '{screener_name}'.")
     return 0
