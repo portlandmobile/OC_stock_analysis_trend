@@ -19,9 +19,11 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from finviz_db import ScreenerCache
 from finviz.screener import Screener
 import finviz
+import yfinance as yf
 
 CONFIG_FILE = "finviz_config.json"
 
@@ -80,6 +82,29 @@ def _sync_one(cache, screener_name, url, force_refresh, clean=True):
                 info = {}
             pe_val = info.get("P/E") or info.get("PE")
             cap_val = info.get("Market Cap") or info.get("MarketCap")
+            # Fetch P/S ratio
+            ps_val = None
+            try:
+                ps_val = info.get("P/S") or info.get("PS")
+            except Exception:
+                pass
+            ps_str = str(ps_val) if ps_val is not None else None
+
+            # Fetch quarterly revenue from yfinance
+            q1_rev, q2_rev, q3_rev = None, None, None
+            try:
+                t_yf = yf.Ticker(t)
+                income = t_yf.income_stmt
+                if income is not None and not income.empty:
+                    rev_row = income.loc['Total Revenue']
+                    rev_vals = [v for v in rev_row.values if v is not None and v > 0]
+                    if len(rev_vals) >= 3:
+                        q3_rev = str(round(rev_vals[-3], 2))  # oldest of 3
+                        q2_rev = str(round(rev_vals[-2], 2))
+                        q1_rev = str(round(rev_vals[-1], 2))  # most recent
+            except Exception:
+                pass
+
             rows.append({
                 "ticker": t,
                 "Company": info.get("Company"),
@@ -88,6 +113,10 @@ def _sync_one(cache, screener_name, url, force_refresh, clean=True):
                 "Country": info.get("Country"),
                 "PE": str(pe_val) if pe_val is not None else None,
                 "MarketCap": str(cap_val) if cap_val is not None else None,
+                "PS": ps_str,
+                "Q1_Revenue": q1_rev,
+                "Q2_Revenue": q2_rev,
+                "Q3_Revenue": q3_rev,
             })
         except Exception as e:
             print(f"Warning: get_stock({t}) failed: {e}", file=sys.stderr)
@@ -99,6 +128,10 @@ def _sync_one(cache, screener_name, url, force_refresh, clean=True):
                 "Country": None,
                 "PE": None,
                 "MarketCap": None,
+                "PS": None,
+                "Q1_Revenue": None,
+                "Q2_Revenue": None,
+                "Q3_Revenue": None,
             })
         time.sleep(0.15)
 

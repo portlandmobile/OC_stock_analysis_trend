@@ -28,8 +28,11 @@ def _fmt_meta(val):
     return str(val).strip()
 
 
-def run_analysis(client, ticker, args, metadata=None):
-    """Run Buffett analysis for one ticker. metadata optional dict with Company, Industry, PE, MarketCap for display."""
+def run_analysis(client, ticker, args, metadata=None, ps=None, q_rev=None):
+    """Run Buffett analysis for one ticker. metadata optional dict with Company, Industry, PE, MarketCap for display.
+    ps: float, P/S ratio from FinViz
+    q_rev: list of quarterly revenue values [q1, q2, q3] from yfinance
+    """
     ticker = ticker.strip().upper()
     if not ticker:
         return False
@@ -61,6 +64,16 @@ def run_analysis(client, ticker, args, metadata=None):
         extracted['debt'] = std_val
 
     history = {'NetIncomeLoss': client.extract_historical_facts(facts_data, 'NetIncomeLoss')}
+
+    # Add PS and quarterly revenue to facts for scoring
+    if ps is not None and ps != '-':
+        try:
+            extracted['ps'] = float(ps)
+        except (ValueError, TypeError):
+            pass
+    if q_rev and len(q_rev) >= 3:
+        extracted['revenue_q'] = [float(r) for r in q_rev if r is not None and r != '-']
+
     engine = FormulaEngine(extracted, history)
     results = engine.evaluate_all()
 
@@ -121,6 +134,10 @@ def main():
     parser.add_argument("--date-range", type=str, help="Date for screener stocks (YYYY-MM-DD). Default: today.")
     parser.add_argument("--format", type=str, default="telegram")
     parser.add_argument("--force-refresh", action="store_true")
+    parser.add_argument("--ps", type=float, default=None, help="Price-to-Sales ratio")
+    parser.add_argument("--q1-rev", type=float, default=None, help="Most recent quarterly revenue")
+    parser.add_argument("--q2-rev", type=float, default=None, help="2nd most recent quarterly revenue")
+    parser.add_argument("--q3-rev", type=float, default=None, help="3rd most recent quarterly revenue")
     args = parser.parse_args()
 
     if args.finviz_screener is not None:
@@ -140,7 +157,7 @@ def main():
         if args.format == "telegram":
             print(f"📋 Buffett Analysis — FinViz screener: {args.finviz_screener} (updated {on_date}, {len(rows)} stocks)\n")
         for row in rows:
-            run_analysis(client, row["ticker"], args, metadata=row)
+            run_analysis(client, row["ticker"], args, metadata=row, ps=row.get("PS"), q_rev=[row.get("Q1_Revenue"), row.get("Q2_Revenue"), row.get("Q3_Revenue")])
         return 0
 
     # Single-ticker mode

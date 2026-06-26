@@ -52,80 +52,73 @@ Once all scripts exist, execute commands as follows. For stock-analysis, please 
 
 ### oversold
 ```bash
-cd {skillDir}
-python3 technical_only.py --top-n 20 --format telegram
+python3 {skillDir}/technical_only.py --top-n 20 --format telegram
 ```
 
 With custom threshold:
 ```bash
-python3 technical_only.py --threshold -90 --top-n 10 --format telegram
+python3 {skillDir}/technical_only.py --threshold -90 --top-n 10 --format telegram
 ```
 ### update FinViz data
 ```bash
-cd {skillDir}
-python3 finviz_sync.py
+python3 {skillDir}/finviz_sync.py
 ```
 
-### analyze TICKER
+### analyze [TICKER Name]
 * Method 1: analyze TICKER
 ```bash
-cd {skillDir}
-python3 analyze.py --ticker AAPL --format telegram
-pythond3 final_report.py --ticker [TICKER]
+python3 {skillDir}/analyze.py --ticker AAPL --format telegram
+python3 {skillDir}/final_report.py --ticker [TICKER]
 ```
 
-### analyze TICKER FinViz [SCREENER NAME]
+### analyze FinViz [SCREENER NAME]
 When analyze screener, you will use a combination of 3 commands and scripts.  The sequence is:
- "update FinViz data" -> execute the analyze.py script described below -> "final_report.py --screener [SCREENER NAME]" of the top 20. No need to send final_report output to LLM provider.  Just print out the output from final_report.
+ "update FinViz data" -> execute the analyze.py script described below -> "final_report.py --screener [SCREENER NAME]" of the top 20. No need to send final_report output to LLM provider.  Just print out the output from final_report.py.
 ```bash
-cd {skillDir}
 # sync data first
-python3 finviz_sync.py
+python3 {skillDir}/finviz_sync.py
 
 # Specific screener (stocks updated today)
-python3 analyze.py --finviz-screener [SCRNEER NAME] #--format telegram
+python3 {skillDir}/analyze.py --finviz-screener [SCRNEER NAME] #--format telegram
 
 # report all
-python3 final_report.py [SCREENER NAME]
+python3 {skillDir}/final_report.py [SCREENER NAME]
 ```
 
-### analyze TICKER FinViz All Screeners
+### analyze FinViz All Screeners
 When analyze screener, you will use a combination of 3 commands and scripts.  The sequence is:
- "update FinViz data" -> execute the analyze.py script described below -> "final_report.py --screeber all" of the top 20. Just print out the output from final_report.
+ "update FinViz data" -> execute the analyze.py script described below -> "final_report.py --screeber all" of the top 20. Just print out the output from final_report.py.
 ```bash
-cd {skillDir}
 # sync data first
-python3 finviz_sync.py
+python3 {skillDir}/finviz_sync.py
 
 # All screeners (distinct tickers updated today)
-python3 analyze.py --finviz-screener all #--format telegram
+python3 {skillDir}/analyze.py --finviz-screener all #--format telegram
 
 # report all
-python3 final_report.py [SCREENER NAME]
+python3 {skillDir}/final_report.py [SCREENER NAME]
 ```
 
-### analyze TICKER FinViz [SCREENER NAME] [DATE]
+### analyze FinViz [SCREENER NAME] [DATE]
 ```bash
-cd {skillDir}
 # sync data first
-python3 finviz_sync.py
+python3 {skillDir}/finviz_sync.py
 
 # Use a specific date (e.g. analyze FinViz screener 'refined 50D drop' on 2025-02-22)
-python3 analyze.py --finviz-screener [SCREEN NAME] --date-range [DATE] #--format telegram
+python3 {skillDir}/analyze.py --finviz-screener [SCREEN NAME] --date-range [DATE] #--format telegram
 
 # report all
-python3 final_report.py [SCREENER NAME]
+python3 {skillDir}/final_report.py [SCREENER NAME]
 ```
 
 ### screen
 ```bash
-cd {skillDir}
-python3 screening.py --min-score 5 --top-n 10 --format telegram
+python3 {skillDir}/screening.py --min-score 5 --top-n 10 --format telegram
 ```
 
 With high quality filter:
 ```bash
-python3 screening.py --min-score 8 --top-n 10 --format telegram
+python3 {skillDir}/screening.py --min-score 8 --top-n 10 --format telegram
 ```
 
 ## MEMORY

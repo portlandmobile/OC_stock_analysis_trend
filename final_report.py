@@ -6,6 +6,7 @@ import pandas as pd
 import json
 import os
 import sys
+from datetime import date
 
 # Change to the skill directory so imports and paths work
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,16 +15,15 @@ sys.path.append(SKILL_DIR)
 
 # Configuration
 DB_PATH = "data/finviz_screeners.db"
-SCREENER_NAME = "dividend and new low"
 EXCLUDED_INDUSTRIES = ["Asset Management", "REIT", "Financial Fund", "Closed-End Fund"]
 
 def get_stocks(screener_name):
     conn = sqlite3.connect(DB_PATH)
     if screener_name == "all":
-        query = f"SELECT ticker, Company, Industry, PE FROM screener_stocks"
+        query = f"SELECT ticker, Company, Industry, PE, PS, Q1_Revenue, Q2_Revenue, Q3_Revenue FROM screener_stocks"
         df = pd.read_sql_query(query, conn)
     else:
-        query = f"SELECT ticker, Company, Industry, PE FROM screener_stocks WHERE screener_name = ?"
+        query = f"SELECT ticker, Company, Industry, PE, PS, Q1_Revenue, Q2_Revenue, Q3_Revenue FROM screener_stocks WHERE screener_name = ?"
         df = pd.read_sql_query(query, conn, params=(screener_name,))
     conn.close()
     return df
@@ -40,6 +40,68 @@ def filter_stocks(df):
     # Sort by PE
     df = df.sort_values('PE').head(20)
     return df
+
+
+def _ps_score(ps_val):
+    """Score P/S ratio: 1-5 (lower is better)."""
+    try:
+        ps = float(ps_val)
+    except (TypeError, ValueError):
+        return "N/A"
+    if ps < 1:
+        return 5
+    elif ps < 3:
+        return 4
+    elif ps < 5:
+        return 3
+    elif ps < 10:
+        return 2
+    else:
+        return 1
+
+
+def _qoq_score(q1, q2, q3):
+    """Score QoQ revenue growth trend: 1-5.
+    
+    q1, q2, q3: quarterly revenue values (most recent first).
+    With 3 values we get 2 QoQ changes.
+    """
+    vals = []
+    for v in [q1, q2, q3]:
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            return "N/A"
+    
+    if len(vals) < 3:
+        return "N/A"
+    
+    # Compute QoQ % changes
+    changes = []
+    for i in range(len(vals) - 1):
+        prev = vals[i + 1]
+        curr = vals[i]
+        if prev > 0:
+            changes.append((curr - prev) / prev * 100)
+    
+    if not changes:
+        return "N/A"
+    
+    # With 3 quarters we have 2 QoQ changes
+    last_2 = changes[:2]
+    positive_count = sum(1 for c in last_2 if c > 0)
+    avg_change = sum(last_2) / len(last_2)
+    
+    if positive_count >= 2 and avg_change > 20:
+        return 5
+    elif positive_count >= 2 and avg_change > 10:
+        return 4
+    elif positive_count >= 2:
+        return 3
+    elif positive_count >= 1:
+        return 2
+    else:
+        return 1
 
 def get_buffett_score(ticker):
     try:
@@ -80,6 +142,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ticker", type=str)
     parser.add_argument("--screener", type=str, default="dividend and new low")
+    parser.add_argument("--vault", action="store_true", help="Also write report to Obsidian vault")
     args = parser.parse_args()
 
     if args.ticker:
@@ -99,6 +162,13 @@ def main():
         score = get_buffett_score(ticker)
         tech = get_technical_status(ticker)
         
+        ps = row.get('PS')
+        q1 = row.get('Q1_Revenue')
+        q2 = row.get('Q2_Revenue')
+        q3 = row.get('Q3_Revenue')
+        ps_sc = _ps_score(ps)
+        qoq_sc = _qoq_score(q1, q2, q3)
+        
         results.append({
             "Ticker": ticker,
             "Company Name": row['Company'],
@@ -106,12 +176,15 @@ def main():
             "Buffett Score": score,
             "P/E Ratio": row['PE'],
             "Williams %R": tech['wr'],
-            "Technical Status": tech['status']
+            "Technical Status": tech['status'],
+            "P/S Ratio": ps if ps else "N/A",
+            "PS Score": ps_sc,
+            "QoQ Revenue Growth": qoq_sc,
         })
     
     # Format table
-    header = "| Ticker | Company Name | Industry | Buffett Score | P/E Ratio | Williams %R | Technical Status |"
-    separator = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+    header = "| Ticker | Company Name | Industry | Buffett Score | P/E Ratio | Williams %R | Technical Status | P/S Ratio | PS Score | QoQ Revenue Growth |"
+    separator = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
     rows = []
     for r in results:
         status_emoji = {
@@ -123,11 +196,26 @@ def main():
             "N/A": "N/A"
         }.get(r['Technical Status'], r['Technical Status'])
         
-        rows.append(f"| **{r['Ticker']}** | {r['Company Name']} | {r['Industry']} | {r['Buffett Score']} | {r['P/E Ratio']} | {r['Williams %R']} | {status_emoji} |")
+        # Format scores as emoji + value
+        ps_display = f"{r['PS Score']}" if isinstance(r['PS Score'], int) else r['PS Score']
+        qoq_display = f"{r['QoQ Revenue Growth']}" if isinstance(r['QoQ Revenue Growth'], int) else r['QoQ Revenue Growth']
+        
+        rows.append(f"| **{r['Ticker']}** | {r['Company Name']} | {r['Industry']} | {r['Buffett Score']} | {r['P/E Ratio']} | {r['Williams %R']} | {status_emoji} | {r['P/S Ratio']} | {ps_display} | {qoq_display} |")
     
     print(header)
     print(separator)
     print("\n".join(rows))
+
+    if args.vault:
+        vault_dir = "/home/openclaw/MyVault/Projects/Trading/Screener"
+        os.makedirs(vault_dir, exist_ok=True)
+        filename = os.path.join(vault_dir, f"{date.today().isoformat()}-{args.screener}.md")
+        with open(filename, "w") as f:
+            f.write(f"# Screener Report — {args.screener} ({date.today().isoformat()})\n\n")
+            f.write(header + "\n")
+            f.write(separator + "\n")
+            f.write("\n".join(rows) + "\n")
+        print(f"\n📁 Saved to {filename}", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

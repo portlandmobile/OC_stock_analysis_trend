@@ -15,6 +15,8 @@ class FormulaEngine:
         results.append(self.interest_coverage())
         results.append(self.earnings_stability())
         results.append(self.capital_allocation())
+        results.append(self.price_to_sales_score())
+        results.append(self.qoq_revenue_growth_score())
         return results
 
     def _result(self, name, status, value, target, description, provenance=None):
@@ -135,3 +137,65 @@ class FormulaEngine:
         res = self.return_on_equity()
         res['name'] = "Capital Allocation"
         return res
+
+    def price_to_sales_score(self):
+        """Score P/S ratio: 1-5 (lower is better). Uses PS from facts dict."""
+        ps = self.facts.get('ps')
+        if ps is None:
+            return self._result("Price-to-Sales", "NA", None, "N/A", "P/S ratio (1-5 scale)")
+        ps_val = ps if isinstance(ps, (int, float)) else None
+        if ps_val is None or ps_val <= 0:
+            return self._result("Price-to-Sales", "NA", str(ps), "N/A", "P/S ratio (1-5 scale)")
+
+        if ps_val < 1:
+            score, target = 5, "< 1"
+        elif ps_val < 3:
+            score, target = 4, "1–3"
+        elif ps_val < 5:
+            score, target = 3, "3–5"
+        elif ps_val < 10:
+            score, target = 2, "5–10"
+        else:
+            score, target = 1, "> 10"
+
+        return self._result("Price-to-Sales", str(score), round(ps_val, 2), target, "P/S ratio (1-5 scale)")
+
+    def qoq_revenue_growth_score(self):
+        """Score QoQ revenue growth trend: 1-5.
+        
+        Uses revenue_q (most recent first). With 3 values we get 2 QoQ changes.
+        """
+        revenue_q = self.facts.get('revenue_q')
+        if revenue_q is None or len(revenue_q) < 3:
+            return self._result("QoQ Revenue Growth", "NA", None, "N/A", "QoQ growth trend (1-5 scale)")
+
+        # revenue_q should be a list of quarterly revenue values [q1, q2, q3, ...] (most recent first)
+        # Compute QoQ % change
+        changes = []
+        for i in range(len(revenue_q) - 1):
+            prev = revenue_q[i + 1]
+            curr = revenue_q[i]
+            if prev and prev > 0:
+                change = (curr - prev) / prev * 100
+                changes.append(change)
+
+        if not changes:
+            return self._result("QoQ Revenue Growth", "NA", None, "N/A", "QoQ growth trend (1-5 scale)")
+
+        # With 3 quarters we have 2 QoQ changes
+        last_2 = changes[:2]  # most recent changes
+        positive_count = sum(1 for c in last_2 if c > 0)
+        avg_change = sum(last_2) / len(last_2)
+
+        if positive_count >= 2 and avg_change > 20:
+            score = 5
+        elif positive_count >= 2 and avg_change > 10:
+            score = 4
+        elif positive_count >= 2:
+            score = 3
+        elif positive_count >= 1:
+            score = 2
+        else:
+            score = 1
+
+        return self._result("QoQ Revenue Growth", str(score), f"{avg_change:.1f}%", f"{positive_count}/2 positive", "QoQ growth trend (1-5 scale)")

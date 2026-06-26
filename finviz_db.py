@@ -38,14 +38,18 @@ class ScreenerCache:
                     Country TEXT,
                     PE TEXT,
                     MarketCap TEXT,
+                    PS TEXT,
+                    Q1_Revenue TEXT,
+                    Q2_Revenue TEXT,
+                    Q3_Revenue TEXT,
                     PRIMARY KEY (screener_name, ticker)
                 )
             """)
             self._add_columns_if_missing(conn)
 
     def _add_columns_if_missing(self, conn):
-        """Add Company, Sector, Industry, Country, PE, MarketCap to existing tables."""
-        for col in ["Company", "Sector", "Industry", "Country", "PE", "MarketCap"]:
+        """Add Company, Sector, Industry, Country, PE, MarketCap, PS, Q1_Revenue, Q2_Revenue, Q3_Revenue to existing tables."""
+        for col in ["Company", "Sector", "Industry", "Country", "PE", "MarketCap", "PS", "Q1_Revenue", "Q2_Revenue", "Q3_Revenue"]:
             try:
                 conn.execute(f"ALTER TABLE screener_stocks ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
@@ -116,14 +120,15 @@ class ScreenerCache:
 
     def get_tickers_with_metadata(self, screener_name, on_date):
         """
-        Return list of dicts with ticker, Company, Sector, Industry, Country, PE, MarketCap
-        for rows where date(updated_at) = on_date. screener_name or "all" (dedupe by ticker).
+        Return list of dicts with ticker, Company, Sector, Industry, Country, PE, MarketCap, PS,
+        Q1_Revenue, Q2_Revenue, Q3_Revenue for rows where date(updated_at) = on_date.
+        screener_name or "all" (dedupe by ticker).
         """
         try:
             with sqlite3.connect(self.db_path, timeout=15) as conn:
                 if screener_name.strip().lower() == "all":
                     cursor = conn.execute(
-                        "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap "
+                        "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap, PS, Q1_Revenue, Q2_Revenue, Q3_Revenue "
                         "FROM screener_stocks WHERE date(updated_at) = ? ORDER BY screener_name, ticker",
                         (on_date,),
                     )
@@ -144,10 +149,14 @@ class ScreenerCache:
                             "Country": r[4],
                             "PE": r[5],
                             "MarketCap": r[6],
+                            "PS": r[7],
+                            "Q1_Revenue": r[8],
+                            "Q2_Revenue": r[9],
+                            "Q3_Revenue": r[10],
                         })
                     return result
                 cursor = conn.execute(
-                    "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap "
+                    "SELECT ticker, Company, Sector, Industry, Country, PE, MarketCap, PS, Q1_Revenue, Q2_Revenue, Q3_Revenue "
                     "FROM screener_stocks WHERE screener_name = ? AND date(updated_at) = ?",
                     (screener_name, on_date),
                 )
@@ -160,6 +169,10 @@ class ScreenerCache:
                         "Country": r[4],
                         "PE": r[5],
                         "MarketCap": r[6],
+                        "PS": r[7],
+                        "Q1_Revenue": r[8],
+                        "Q2_Revenue": r[9],
+                        "Q3_Revenue": r[10],
                     }
                     for r in cursor.fetchall()
                 ]
@@ -175,7 +188,7 @@ class ScreenerCache:
         if not rows:
             return
         updated_at = datetime.now().isoformat()
-        cols = ["screener_name", "ticker", "updated_at", "Company", "Sector", "Industry", "Country", "PE", "MarketCap"]
+        cols = ["screener_name", "ticker", "updated_at", "Company", "Sector", "Industry", "Country", "PE", "MarketCap", "PS", "Q1_Revenue", "Q2_Revenue", "Q3_Revenue"]
         placeholders = ", ".join("?" * len(cols))
         for _ in range(3):
             try:
@@ -198,6 +211,10 @@ class ScreenerCache:
                             r.get("Country"),
                             r.get("PE"),
                             r.get("MarketCap"),
+                            r.get("PS"),
+                            r.get("Q1_Revenue"),
+                            r.get("Q2_Revenue"),
+                            r.get("Q3_Revenue"),
                         )
                         conn.execute(
                             f"INSERT INTO screener_stocks ({', '.join(cols)}) VALUES ({placeholders})",
